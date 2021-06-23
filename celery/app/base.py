@@ -7,6 +7,7 @@ import warnings
 from collections import UserDict, defaultdict, deque
 from datetime import datetime
 from operator import attrgetter
+import contextvars
 
 from click.exceptions import Exit
 from kombu import pools
@@ -232,7 +233,8 @@ class Celery:
                  autofinalize=True, namespace=None, strict_typing=True,
                  **kwargs):
 
-        self._local = threading.local()
+        self.context_oid = contextvars.ContextVar('context_oid')
+        self.context_backend = contextvars.ContextVar('context_backend')
 
         self.clock = LamportClock()
         self.main = main
@@ -1200,11 +1202,7 @@ class Celery:
     @property
     def thread_oid(self):
         """Per-thread unique identifier for this app."""
-        try:
-            return self._local.oid
-        except AttributeError:
-            self._local.oid = new_oid = oid_from(self, threads=True)
-            return new_oid
+        return self.context_oid.get(oid_from(self, threads=True))
 
     @cached_property
     def amqp(self):
@@ -1214,11 +1212,7 @@ class Celery:
     @property
     def backend(self):
         """Current backend instance."""
-        try:
-            return self._local.backend
-        except AttributeError:
-            self._local.backend = new_backend = self._get_backend()
-            return new_backend
+        return self.context_backend.get(self._get_backend())
 
     @property
     def conf(self):
